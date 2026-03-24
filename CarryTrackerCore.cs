@@ -47,7 +47,7 @@ public class CarryTrackerCore : BaseSettingsPlugin<CarryTrackerSettings>
     private IEnumerable<Entity> GetTrackedEntities(bool trackAll, string carryName, Entity localPlayer)
     {
         return GameController.EntityListWrapper.ValidEntitiesByType[EntityType.Player]
-            .Where(entity => entity != localPlayer)
+            .Where(entity => entity.Address != localPlayer.Address)
             .Where(entity => trackAll || 
                 string.Equals(entity.GetComponent<Player>()?.PlayerName, carryName, StringComparison.OrdinalIgnoreCase));
     }
