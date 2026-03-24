@@ -14,5 +14,12 @@ public class CarryTrackerSettings : ISettings
     public ColorNode ColorMissing { get; set; } = new(Color.Red);
     public ColorNode ColorActive { get; set; } = new(Color.Green);
     public ColorNode ColorWarning { get; set; } = new(Color.Blue);
-    public ToggleNode DebugBuffs { get; set; } = new(false);
+
+    public ToggleNode EnableFollowbot { get; set; } = new(false);
+    public HotkeyNode MoveKey { get; set; } = new(System.Windows.Forms.Keys.T);
+    public RangeNode<int> FollowDistance { get; set; } = new(30, 10, 150);
+
+    public ToggleNode EnableAutoLink { get; set; } = new(false);
+    public HotkeyNode LinkSkillKey { get; set; } = new(System.Windows.Forms.Keys.R);
+    public RangeNode<int> MaxLinkDistance { get; set; } = new(60, 10, 100);
 }

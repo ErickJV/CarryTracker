@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using ExileCore;
 using ExileCore.PoEMemory.Components;
 using ExileCore.PoEMemory.MemoryObjects;
@@ -11,6 +12,8 @@ namespace CarryTracker;
 
 public class CarryTrackerCore : BaseSettingsPlugin<CarryTrackerSettings>
 {
+    private DateTime _nextActionTime;
+
     public override bool Initialise() => true;
 
     public override void Render()
@@ -33,12 +36,72 @@ public class CarryTrackerCore : BaseSettingsPlugin<CarryTrackerSettings>
         if (trackedEntities.Count == 0)
             return;
 
-        if (Settings.DebugBuffs.Value)
+        DrawTrackingMarkers(localPlayer, trackedEntities);
+    }
+
+    public override Job Tick()
+    {
+        if (!Settings.Enable.Value || (!Settings.EnableFollowbot.Value && !Settings.EnableAutoLink.Value))
+            return null;
+
+        var localPlayer = GameController.Game.IngameState.Data.LocalPlayer;
+        if (localPlayer == null || !localPlayer.IsAlive)
+            return null;
+
+        var carryName = Settings.CarryName.Value;
+        var trackAll = Settings.TrackAllPlayers.Value;
+        
+        var trackedEntities = GetTrackedEntities(trackAll, carryName, localPlayer).ToList();
+        if (trackedEntities.Count == 0)
+            return null;
+
+        // Follow the closest alive carry
+        var carry = trackedEntities.Where(e => e.IsAlive).OrderBy(e => e.DistancePlayer).FirstOrDefault();
+
+        if (carry != null && DateTime.UtcNow > _nextActionTime)
         {
-            DrawDebugBuffs(localPlayer, trackedEntities);
+            ExecuteAutomation(localPlayer, carry);
         }
 
-        DrawTrackingMarkers(localPlayer, trackedEntities);
+        return null;
+    }
+
+    private void ExecuteAutomation(Entity localPlayer, Entity carry)
+    {
+        var distance = carry.DistancePlayer;
+        var screenPos = GameController.Game.IngameState.Camera.WorldToScreen(carry.PosNum);
+
+        // Auto-Link logic takes priority
+        if (Settings.EnableAutoLink.Value && distance <= Settings.MaxLinkDistance.Value)
+        {
+            var localBuffs = localPlayer.GetComponent<Buffs>()?.BuffsList;
+            var carryBuffs = carry.GetComponent<Buffs>()?.BuffsList;
+            var (hasBuff, timeLeft) = CalculateSoulLinkStatus(localBuffs, carryBuffs);
+
+            if (!hasBuff || timeLeft <= Settings.WarningDuration.Value)
+            {
+                Input.SetCursorPos(screenPos);
+                Thread.Sleep(10);
+                Input.KeyDown(Settings.LinkSkillKey.Value);
+                Thread.Sleep(30);
+                Input.KeyUp(Settings.LinkSkillKey.Value);
+                
+                _nextActionTime = DateTime.UtcNow.AddMilliseconds(500);
+                return;
+            }
+        }
+
+        // Followbot Logic
+        if (Settings.EnableFollowbot.Value && distance > Settings.FollowDistance.Value)
+        {
+            Input.SetCursorPos(screenPos);
+            Thread.Sleep(10);
+            Input.KeyDown(Settings.MoveKey.Value);
+            Thread.Sleep(30);
+            Input.KeyUp(Settings.MoveKey.Value);
+            
+            _nextActionTime = DateTime.UtcNow.AddMilliseconds(150);
+        }
     }
 
     /// <summary>
@@ -50,45 +113,6 @@ public class CarryTrackerCore : BaseSettingsPlugin<CarryTrackerSettings>
             .Where(entity => entity.Address != localPlayer.Address)
             .Where(entity => trackAll || 
                 string.Equals(entity.GetComponent<Player>()?.PlayerName, carryName, StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>
-    /// Renders debug information for buffs active on the local player and all tracked entities.
-    /// </summary>
-    private void DrawDebugBuffs(Entity localPlayer, IEnumerable<Entity> trackedEntities)
-    {
-        var startY = 150f;
-        var localBuffs = localPlayer.GetComponent<Buffs>()?.BuffsList;
-
-        if (localBuffs != null)
-        {
-            Graphics.DrawText("--- Local Player Buffs ---", new Vector2(20, startY), Color.Yellow);
-            startY += 20f;
-            foreach (var b in localBuffs)
-            {
-                Graphics.DrawText($"{b.Name} : {b.Timer:F1}s", new Vector2(20, startY), Color.White);
-                startY += 20f;
-            }
-        }
-
-        var startX = 300f;
-        foreach (var targetEntity in trackedEntities)
-        {
-            startY = 150f;
-            var targetBuffs = targetEntity.GetComponent<Buffs>()?.BuffsList;
-            if (targetBuffs == null) continue;
-
-            var playerName = targetEntity.GetComponent<Player>()?.PlayerName ?? "Target";
-            Graphics.DrawText($"--- {playerName} Buffs ---", new Vector2(startX, startY), Color.Yellow);
-            startY += 20f;
-
-            foreach (var b in targetBuffs)
-            {
-                Graphics.DrawText($"{b.Name} : {b.Timer:F1}s", new Vector2(startX, startY), Color.White);
-                startY += 20f;
-            }
-            startX += 200f;
-        }
     }
 
     /// <summary>
